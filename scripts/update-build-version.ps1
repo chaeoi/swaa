@@ -2,7 +2,7 @@
 param(
   [string]$AssemblyInfoPath = "Properties\AssemblyInfo.cs",
   [string]$InstallerPath = "installer\SWAutoAttributes.iss",
-  [int]$UtcOffsetHours = 8
+  [string]$Version = $env:VERSION
 )
 
 function Replace-Required {
@@ -31,9 +31,14 @@ function Write-GitHubOutput {
   }
 }
 
-$date = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours($UtcOffsetHours))
-$version = $date.ToString("yyyyMMdd")
-$assemblyVersion = "{0}.{1}.{2}.0" -f $date.Year, $date.Month, $date.Day
+if ($Version -notmatch '^([2-9][0-9]{3})\.([1-9]|1[0-2])\.([1-9][0-9]*)$') {
+  throw "Version must be year.month.sequence."
+}
+$year = [int]$Matches[1]
+$month = [int]$Matches[2]
+$sequence = [uint32]$Matches[3]
+$version = $Version
+$assemblyVersion = "{0}.{1}.{2}.{3}" -f $year, $month, ($sequence -shr 16), ($sequence -band 65535)
 
 $assemblyInfo = Get-Content $AssemblyInfoPath -Raw
 $assemblyInfo = Replace-Required $assemblyInfo 'AssemblyVersion\("[^"]*"\)' "AssemblyVersion(`"$assemblyVersion`")" "AssemblyVersion"

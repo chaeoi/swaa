@@ -2,8 +2,8 @@
 ; Build with Inno Setup 6.x (Unicode)
 
 #define AppName "SW Auto Attributes"
-#define AppVersion "20260527"
-#define AppFileVersion "2026.5.27.0"
+#define AppVersion "dev"
+#define AppFileVersion "0.0.0.0"
 #define AppPublisher "canghai"
 #define AppExeName "SWAutoAttributes.dll"
 #define AddinGuid "b28bf6d5-6185-bbed-0e53-9b04a8317385"

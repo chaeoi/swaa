@@ -1,0 +1,101 @@
+name: 自动发布 swaa
+'on':
+  push:
+    branches:
+    - main
+  workflow_dispatch: null
+concurrency:
+  group: swaa-release
+  cancel-in-progress: false
+  queue: max
+permissions:
+  contents: write
+jobs:
+  version:
+    name: 自动编号
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.number.outputs.version }}
+      released: ${{ steps.number.outputs.released }}
+      skip: ${{ steps.number.outputs.skip }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: 计算版本并创建标签
+      id: number
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        test "$GITHUB_REF" = refs/heads/main
+        python3 .github/scripts/version.py
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
+    - name: Install Inno Setup
+      run: choco install innosetup -y
+    - name: Set Build Version
+      id: meta
+      shell: pwsh
+      run: ./scripts/update-build-version.ps1 -Version $env:VERSION
+    - name: Restore + Build Addin
+      run: msbuild SWAutoAttributes.sln /restore /p:Configuration=Release
+    - name: Build Installer
+      shell: pwsh
+      run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer\SWAutoAttributes.iss"'
+    - name: Upload Installer
+      uses: actions/upload-artifact@v7
+      with:
+        name: release-windows
+        path: installer/SW_Auto_Attributes_Setup.exe
+        if-no-files-found: error
+        retention-days: 7
+        overwrite: true
+    needs:
+    - version
+    if: needs.version.outputs.skip != 'true' && needs.version.outputs.released != 'true'
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+  release:
+    name: 发布 GitHub Release
+    needs:
+    - version
+    - build
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.skip != 'true' && (needs.build.result
+      == 'success' || (needs.build.result == 'skipped' && needs.version.outputs.released == 'true')) }}
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PRODUCT_NAME: SW Auto Attributes
+      RELEASE_ASSETS: SW_Auto_Attributes_Setup.exe SHA256SUMS
+      RELEASE_IMAGES: ''
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - name: 检查当前 Release 状态
+      id: state
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 .github/scripts/state.py
+    - name: 下载构建产物
+      if: steps.state.outputs.released != 'true'
+      uses: actions/download-artifact@v7
+      with:
+        pattern: release-*
+        merge-multiple: true
+        path: dist
+    - name: 生成校验和
+      if: steps.state.outputs.released != 'true'
+      run: |
+        set -euo pipefail
+        (cd dist && sha256sum * > SHA256SUMS)
+    - name: 发布或恢复 Release
+      id: publish
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 .github/scripts/publish.py
